@@ -33,7 +33,7 @@ We implement early fusion for VIC3D Detection with PointPillars and provide the 
     └──── cooperative 
        ├───── label_world
        └───── data_info.json              
-```
+``` 
 
 #### Create a symlink to the dataset root
     ```
@@ -60,6 +60,13 @@ We implement early fusion for VIC3D Detection with PointPillars and provide the 
     ```
 
 3. Convert point cloud data from infrastructure coordinate system to vehicle coordinate system.
+
+删除一条记录
+vim ./data/DAIR-V2X/cooperative-vehicle-infrastructure/data_info.json
+搜索006315.pcd删除对应记录
+vim data/split_datas/cooperative-split-data.json
+删除["cooperative_split"]["train"] 中的006315
+
     ```
     python tools/dataset_converter/point_cloud_i2v.py --source-root ./data/DAIR-V2X/cooperative-vehicle-infrastructure \
         --target-root ./data/DAIR-V2X/cooperative-vehicle-infrastructure/vic3d-early-fusion-training/velodyne/lidar_i2v

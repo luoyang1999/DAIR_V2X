@@ -62,6 +62,19 @@ def trans(input_point, translation, rotation):
     output_point = np.dot(rotation, input_point).reshape(3, 1) + np.array(translation).reshape(3, 1)
     return output_point
 
+def trans_multi(input_point, translation, rotation):
+    '''
+    input_point: [n, 3]
+    return: [n, 3]
+    '''
+    n = input_point.shape[0]
+
+    # input_point = np.array(input_point).reshape(3, 1)
+    translation = np.array(translation).reshape(3, 1)
+    rotation = np.array(rotation).reshape(3, 3)
+    # output_point = np.dot(rotation, input_point).reshape(3, 1) + np.array(translation).reshape(3, 1)
+    output_point = np.dot(rotation, input_point.T).reshape(3, n).T + np.expand_dims(np.array(translation), 0).repeat(n, axis=0).reshape(n ,3)
+    return output_point
 
 def rev_matrix(R):
     R = np.matrix(R)
@@ -107,11 +120,56 @@ def trans_point_i2v(input_point, path_virtuallidar2world, path_novatel2world, pa
 
     return point
 
+def trans_point_i2v_multi(input_point, path_virtuallidar2world, path_novatel2world, path_lidar2novatel):
+    # print('0:', input_point)
+    n = input_point.shape[0]
+    # virtuallidar to world
+    rotation, translation, delta_x, delta_y = get_virtuallidar2world(path_virtuallidar2world)
+
+    # point = trans_multi(input_point, translation, rotation) + np.array([delta_x, delta_y, 0]).reshape(3, n)
+
+    point = trans_multi(input_point, translation, rotation) + np.expand_dims(np.array([delta_x, delta_y, 0]),0).repeat(n, axis=0).reshape(n ,3)
+    """
+    print('rotation, translation, delta_x, delta_y', rotation, translation, delta_x, delta_y)
+    print('1:', point)
+    """
+
+    # world to novatel
+    rotation, translation = get_novatel2world(path_novatel2world)
+    new_rotation = rev_matrix(rotation)
+    new_translation = -np.dot(new_rotation, translation)
+    point = trans_multi(point, new_translation, new_rotation)
+    """
+    print('rotation, translation:', rotation, translation)
+    print('new_translation, new_rotation:', new_translation, new_rotation)
+    print('2:', point)
+    """
+
+    # novatel to lidar
+    rotation, translation = get_lidar2novatel(path_lidar2novatel)
+    new_rotation = rev_matrix(rotation)
+    new_translation = -np.dot(new_rotation, translation)
+    point = trans_multi(point, new_translation, new_rotation)
+    """
+    print('rotation, translation:', rotation, translation)
+    print('new_translation, new_rotation:', new_translation, new_rotation)
+    print('3:', point)
+    """
+    # point = point.reshape(1, 3).tolist()
+    # point = point[0]
+
+    return point
 
 def read_pcd(path_pcd):
     pointpillar = o3d.io.read_point_cloud(path_pcd)
     points = np.asarray(pointpillar.points)
     points = points.tolist()
+    return points
+
+def read_pcd_multi(path_pcd):
+    pointpillar = o3d.io.read_point_cloud(path_pcd)
+    points = np.asarray(pointpillar.points)
+    # points = points.tolist()
     return points
 
 
@@ -137,6 +195,12 @@ def trans_pcd_i2v(path_pcd, path_virtuallidar2world, path_novatel2world, path_li
     write_pcd(path_pcd, new_points, path_save)
 
 
+def trans_pcd_i2v_multi(path_pcd, path_virtuallidar2world, path_novatel2world, path_lidar2novatel, path_save):
+    points = read_pcd_multi(path_pcd)   # points: (n, 3)
+    new_points = trans_point_i2v_multi(points, path_virtuallidar2world, path_novatel2world, path_lidar2novatel)
+    new_points = new_points.tolist()
+    write_pcd(path_pcd, new_points, path_save)
+
 def get_i2v(path_c, path_dest):
     mkdir_p(path_dest)
     path_c_data_info = os.path.join(path_c, "cooperative/data_info.json")
@@ -152,14 +216,25 @@ def get_i2v(path_c, path_dest):
         path_pcd_v = os.path.join(path_c, data["vehicle_pointcloud_path"])
         i_data = get_data(i_data_info, path_pcd_i)
         v_data = get_data(v_data_info, path_pcd_v)
-        path_virtuallidar2world = os.path.join(
-            path_c, "infrastructure-side", i_data["calib_virtuallidar_to_world_path"]
-        )
+        try:
+            path_virtuallidar2world = os.path.join(
+                path_c, "infrastructure-side", i_data["calib_virtuallidar_to_world_path"]
+            )
+        except:
+            import pdb
+            pdb.set_trace()
+            print("path_c", path_c)
+            print("i_data", i_data)
+            print("path_pcd_i", path_pcd_i)
+            continue
+
         path_novatel2world = os.path.join(path_c, "vehicle-side", v_data["calib_novatel_to_world_path"])
         path_lidar2novatel = os.path.join(path_c, "vehicle-side", v_data["calib_lidar_to_novatel_path"])
         name = os.path.split(path_pcd_i)[-1]
         path_save = os.path.join(path_dest, name)
-        trans_pcd_i2v(path_pcd_i, path_virtuallidar2world, path_novatel2world, path_lidar2novatel, path_save)
+        # try to fix
+        trans_pcd_i2v_multi(path_pcd_i, path_virtuallidar2world, path_novatel2world, path_lidar2novatel, path_save)
+        break
 
 
 parser = argparse.ArgumentParser("Convert The Point Cloud from Infrastructure to Ego-vehicle")
